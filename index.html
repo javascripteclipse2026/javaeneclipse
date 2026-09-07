@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eclipse Java IDE - Editor Java en Tiempo Real</title>
+  <style>
+    :root {
+      --bg-violet: #1a0533;
+      --bg-mid: #2a0a4a;
+      --panel: #12061f;
+      --panel2: #1c0a30;
+      --orange: #ff6b00;
+      --orange-light: #ff9a3c;
+      --accent: #c77dff;
+      --text: #e8dfff;
+      --muted: #9a7fb8;
+      --border: #4a2c6a;
+      --success: #00e676;
+      --error: #ef5350;
+      --warn: #ffb74d;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-violet);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ========== LOADER ========== */
+    #loader {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(145deg, #0d021c 0%, #1a0533 40%, #2d0b55 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: opacity 0.9s ease, visibility 0.9s;
+    }
+    #loader.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .circuit-box {
+      width: 260px;
+      height: 260px;
+      position: relative;
+    }
+    .circuit-svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 0 14px rgba(255, 107, 0, 0.7));
+    }
+    .trace {
+      fill: none;
+      stroke: var(--orange);
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .trace-bg {
+      stroke: rgba(255, 107, 0, 0.22);
+      stroke-width: 4.5;
+    }
+    .trace-flow {
+      stroke-dasharray: 18 70;
+      animation: flow 1.7s linear infinite;
+    }
+    .trace-flow.d1 { animation-delay: 0.25s; }
+    .trace-flow.d2 { animation-delay: 0.5s; }
+    .trace-flow.d3 { animation-delay: 0.75s; }
+
+    @keyframes flow {
+      to { stroke-dashoffset: -88; }
+    }
+
+    .chip {
+      fill: #0d021c;
+      stroke: var(--orange);
+      stroke-width: 2.2;
+    }
+    .chip-core {
+      fill: var(--orange);
+      transform-origin: center;
+      animation: pulse 1.15s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.65; }
+      50% { opacity: 1; }
+    }
+
+    .loader-title {
+      margin-top: 26px;
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: var(--orange-light);
+      text-transform: uppercase;
+      animation: blink 1.6s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .loader-sub {
+      margin-top: 8px;
+      font-size: 0.88rem;
+      color: var(--accent);
+      opacity: 0.85;
+    }
+
+    /* ========== APP ========== */
+    #app {
+      display: none;
+      height: 100vh;
+      flex-direction: column;
+    }
+    #app.visible { display: flex; }
+
+    /* Header */
+    header {
+      background: linear-gradient(90deg, #0d021c, #1f0840);
+      border-bottom: 2px solid var(--orange);
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.45);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--orange-light);
+    }
+    .logo svg { width: 30px; height: 30px; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: var(--success);
+      background: rgba(0, 230, 118, 0.1);
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(0, 230, 118, 0.3);
+    }
+    .status-pill::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      background: var(--success);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--success);
+    }
+    .status-pill.offline {
+      color: var(--error);
+      background: rgba(239, 83, 80, 0.1);
+      border-color: rgba(239, 83, 80, 0.3);
+    }
+    .status-pill.offline::before {
+      background: var(--error);
+      box-shadow: 0 0 6px var(--error);
+    }
+
+    .btn {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 500;
+      transition: all 0.18s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .btn:hover {
+      background: #2a1545;
+      border-color: var(--orange);
+      color: var(--orange-light);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #ff6b00, #e04e00);
+      border: none;
+      color: #fff;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #ff8533, #ff6b00);
+      box-shadow: 0 0 14px rgba(255, 107, 0, 0.55);
+    }
+    .btn-primary:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Main */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Editor side */
+    .editor-side {
+      width: 55%;
+      display: flex;
+      flex-direction: column;
+      border-right: 2px solid var(--border);
+      background: var(--panel);
+    }
+
+    .editor-toolbar {
+      background: #0d021c;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .file-tab {
+      background: rgba(255, 107, 0, 0.15);
+      border: 1px solid var(--orange);
+      color: var(--orange-light);
+      padding: 4px 14px;
+      border-radius: 5px 5px 0 0;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+    }
+
+    .editor-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    #code-editor {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #0a0414;
+      color: #e8dfff;
+      border: none;
+      outline: none;
+      resize: none;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace;
+      font-size: 14.5px;
+      line-height: 1.55;
+      padding: 14px 16px;
+      tab-size: 4;
+      white-space: pre;
+      overflow: auto;
+    }
+    #code-editor::placeholder { color: #5a3d7a; }
+
+    /* Output side */
+    .output-side {
+      width: 45%;
+      display: flex;
+      flex-direction: column;
+      background: #0a0414;
+    }
+
+    .output-header {
+      background: #0d021c;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .output-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    #output-console {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #c9b8e0;
+    }
+
+    .out-line { margin-bottom: 2px; }
+    .out-success { color: var(--success); }
+    .out-error { color: var(--error); }
+    .out-info { color: #64b5f6; }
+    .out-warn { color: var(--warn); }
+    .out-time { color: var(--muted); font-size: 0.8em; }
+
+    /* Bottom bar */
+    .bottom-bar {
+      background: #0d021c;
+      border-top: 1px solid var(--border);
+      padding: 7px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* Modal for save */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 5000;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--panel2);
+      border: 2px solid var(--orange);
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 420px;
+      box-shadow: 0 0 40px rgba(255, 107, 0, 0.25);
+    }
+    .modal h3 {
+      color: var(--orange-light);
+      margin-bottom: 14px;
+      font-size: 1.15rem;
+    }
+    .modal input {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0a0414;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+      outline: none;
+    }
+    .modal input:focus { border-color: var(--orange); }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    /* Responsive */
+    @media (max-width: 850px) {
+      .main { flex-direction: column; }
+      .editor-side, .output-side { width: 100%; height: 50%; }
+      .editor-side { border-right: none; border-bottom: 2px solid var(--border); }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: #0d021c; }
+    ::-webkit-scrollbar-thumb { background: #4a2c6a; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--orange); }
+  </style>
+</head>
+<body>
+
+  <!-- LOADER -->
+  <div id="loader">
+    <div class="circuit-box">
+      <svg class="circuit-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <path class="trace trace-bg" d="M18 38 H68 V78 H100"/>
+        <path class="trace trace-bg" d="M182 38 H132 V78 H100"/>
+        <path class="trace trace-bg" d="M18 162 H68 V122 H100"/>
+        <path class="trace trace-bg" d="M182 162 H132 V122 H100"/>
+        <path class="trace trace-bg" d="M38 18 V48 H78"/>
+        <path class="trace trace-bg" d="M162 18 V48 H122"/>
+        <path class="trace trace-bg" d="M38 182 V152 H78"/>
+        <path class="trace trace-bg" d="M162 182 V152 H122"/>
+        <path class="trace trace-bg" d="M100 18 V68"/>
+        <path class="trace trace-bg" d="M100 182 V132"/>
+
+        <path class="trace trace-flow" d="M18 38 H68 V78 H100"/>
+        <path class="trace trace-flow d1" d="M182 38 H132 V78 H100"/>
+        <path class="trace trace-flow d2" d="M18 162 H68 V122 H100"/>
+        <path class="trace trace-flow d3" d="M182 162 H132 V122 H100"/>
+        <path class="trace trace-flow" d="M38 18 V48 H78"/>
+        <path class="trace trace-flow d1" d="M162 18 V48 H122"/>
+        <path class="trace trace-flow d2" d="M38 182 V152 H78"/>
+        <path class="trace trace-flow d3" d="M162 182 V152 H122"/>
+        <path class="trace trace-flow" d="M100 18 V68"/>
+        <path class="trace trace-flow d1" d="M100 182 V132"/>
+
+        <rect class="chip" x="74" y="74" width="52" height="52" rx="4"/>
+        <rect class="chip-core" x="87" y="87" width="26" height="26" rx="2"/>
+        <line class="trace" x1="74" y1="84" x2="62" y2="84"/>
+        <line class="trace" x1="74" y1="100" x2="62" y2="100"/>
+        <line class="trace" x1="74" y1="116" x2="62" y2="116"/>
+        <line class="trace" x1="126" y1="84" x2="138" y2="84"/>
+        <line class="trace" x1="126" y1="100" x2="138" y2="100"/>
+        <line class="trace" x1="126" y1="116" x2="138" y2="116"/>
+        <line class="trace" x1="84" y1="74" x2="84" y2="62"/>
+        <line class="trace" x1="100" y1="74" x2="100" y2="62"/>
+        <line class="trace" x1="116" y1="74" x2="116" y2="62"/>
+        <line class="trace" x1="84" y1="126" x2="84" y2="138"/>
+        <line class="trace" x1="100" y1="126" x2="100" y2="138"/>
+        <line class="trace" x1="116" y1="126" x2="116" y2="138"/>
+      </svg>
+    </div>
+    <div class="loader-title">Eclipse Java</div>
+    <div class="loader-sub">Iniciando entorno de compilación...</div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <header>
+      <div class="logo">
+        <svg viewBox="0 0 32 32" fill="none">
+          <rect x="3" y="3" width="26" height="26" rx="3" stroke="#ff6b00" stroke-width="2"/>
+          <rect x="9" y="9" width="14" height="14" rx="1.5" fill="#ff6b00"/>
+          <line x1="3" y1="11" x2="9" y2="11" stroke="#ff6b00" stroke-width="1.6"/>
+          <line x1="23" y1="11" x2="29" y2="11" stroke="#ff6b00" stroke-width="1.6"/>
+          <line x1="3" y1="21" x2="9" y2="21" stroke="#ff6b00" stroke-width="1.6"/>
+          <line x1="23" y1="21" x2="29" y2="21" stroke="#ff6b00" stroke-width="1.6"/>
+        </svg>
+        <span>Eclipse Java IDE</span>
+      </div>
+      <div class="header-right">
+        <div class="status-pill" id="status">Conectado</div>
+        <button class="btn" id="btn-save" title="Guardar proyecto">💾 Guardar</button>
+        <button class="btn" id="btn-download" title="Descargar .java">⬇ Descargar</button>
+        <button class="btn" id="btn-clear" title="Limpiar salida">🗑 Limpiar</button>
+        <button class="btn btn-primary" id="btn-run" title="Compilar y ejecutar (Ctrl+Enter)">▶ Ejecutar</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="editor-side">
+        <div class="editor-toolbar">
+          <div class="file-tab" id="file-name">Main.java</div>
+          <div style="font-size:0.78rem;color:var(--muted);">Ctrl + Enter = Ejecutar</div>
+        </div>
+        <div class="editor-wrap">
+          <textarea id="code-editor" spellcheck="false" placeholder="// Escribe tu código Java aquí..."></textarea>
+        </div>
+      </div>
+
+      <div class="output-side">
+        <div class="output-header">
+          <div class="output-title">📟 Consola de salida</div>
+          <div style="font-size:0.78rem;color:var(--muted);" id="timing"></div>
+        </div>
+        <div id="output-console"></div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <span>Eclipse Java IDE • Backend real con OpenJDK • Compilación + Ejecución segura</span>
+      <span id="footer-info">Listo</span>
+    </div>
+  </div>
+
+  <!-- Modal Guardar -->
+  <div class="modal-overlay" id="save-modal">
+    <div class="modal">
+      <h3>💾 Guardar proyecto</h3>
+      <input type="text" id="save-name" placeholder="Nombre del archivo (ej: HolaMundo)" value="Main">
+      <div class="modal-actions">
+        <button class="btn" id="btn-cancel-save">Cancelar</button>
+        <button class="btn btn-primary" id="btn-confirm-save">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== DEFAULT JAVA CODE ==========
+    const DEFAULT_CODE = `public class Main {
+    public static void main(String[] args) {
+        System.out.println("=================================");
+        System.out.println("  ¡Hola desde Eclipse Java IDE!");
+        System.out.println("=================================");
+        System.out.println();
+
+        // Ejemplo de cálculo
+        int a = 15;
+        int b = 27;
+        System.out.println("Suma: " + a + " + " + b + " = " + (a + b));
+        System.out.println("Producto: " + a + " * " + b + " = " + (a * b));
+
+        // Bucle
+        System.out.println();
+        System.out.println("Números del 1 al 5:");
+        for (int i = 1; i <= 5; i++) {
+            System.out.println("  → " + i);
+        }
+
+        System.out.println();
+        System.out.println("Programa terminado correctamente.");
+    }
+}`;
+
+    // ========== ELEMENTS ==========
+    const loader = document.getElementById('loader');
+    const app = document.getElementById('app');
+    const editor = document.getElementById('code-editor');
+    const output = document.getElementById('output-console');
+    const statusEl = document.getElementById('status');
+    const timingEl = document.getElementById('timing');
+    const footerInfo = document.getElementById('footer-info');
+    const fileNameEl = document.getElementById('file-name');
+    const btnRun = document.getElementById('btn-run');
+    const btnSave = document.getElementById('btn-save');
+    const btnDownload = document.getElementById('btn-download');
+    const btnClear = document.getElementById('btn-clear');
+    const saveModal = document.getElementById('save-modal');
+    const saveNameInput = document.getElementById('save-name');
+    const btnConfirmSave = document.getElementById('btn-confirm-save');
+    const btnCancelSave = document.getElementById('btn-cancel-save');
+
+    let currentFileName = 'Main.java';
+    let isRunning = false;
+
+    // ========== INIT ==========
+    function init() {
+      // Cargar desde localStorage si existe
+      const saved = localStorage.getItem('eclipse-java-code');
+      const savedName = localStorage.getItem('eclipse-java-filename');
+      if (saved) {
+        editor.value = saved;
+        if (savedName) {
+          currentFileName = savedName;
+          fileNameEl.textContent = currentFileName;
+        }
+      } else {
+        editor.value = DEFAULT_CODE;
+      }
+
+      // Auto-guardar en localStorage cada cambio
+      editor.addEventListener('input', () => {
+        localStorage.setItem('eclipse-java-code', editor.value);
+        localStorage.setItem('eclipse-java-filename', currentFileName);
+        footerInfo.textContent = 'Cambios guardados en el navegador';
+      });
+
+      setTimeout(() => {
+        loader.classList.add('hidden');
+        app.classList.add('visible');
+        checkBackend();
+        printWelcome();
+      }, 2100);
+    }
+
+    function printWelcome() {
+      clearOutput();
+      appendLine('Eclipse Java IDE listo.', 'out-success');
+      appendLine('Escribe tu código Java a la izquierda y pulsa ▶ Ejecutar.', 'out-info');
+      appendLine('Atajo: Ctrl + Enter', 'out-info');
+      appendLine('');
+    }
+
+    // ========== BACKEND CHECK ==========
+    async function checkBackend() {
+      try {
+        const res = await fetch('/api/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (res.ok) {
+          statusEl.classList.remove('offline');
+          statusEl.textContent = 'Conectado • OpenJDK';
+        } else {
+          throw new Error('offline');
+        }
+      } catch (e) {
+        statusEl.classList.add('offline');
+        statusEl.textContent = 'Desconectado';
+        appendLine('⚠ No se pudo conectar al backend. Asegúrate de haber iniciado el servidor (python3 server.py).', 'out-warn');
+      }
+    }
+
+    // ========== OUTPUT ==========
+    function clearOutput() {
+      output.innerHTML = '';
+      timingEl.textContent = '';
+    }
+
+    function appendLine(text, cls = '') {
+      const div = document.createElement('div');
+      div.className = 'out-line ' + cls;
+      div.textContent = text;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    // ========== RUN ==========
+    async function runCode() {
+      if (isRunning) return;
+      isRunning = true;
+      btnRun.disabled = true;
+      btnRun.textContent = '⏳ Compilando...';
+      clearOutput();
+      appendLine('Compilando...', 'out-info');
+
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: editor.value })
+        });
+
+        const data = await res.json();
+
+        clearOutput();
+
+        if (data.success) {
+          appendLine('✓ Compilación exitosa', 'out-success');
+          if (data.compile_time !== undefined) {
+            appendLine(`  Tiempo compilación: ${data.compile_time}s`, 'out-time');
+          }
+          appendLine('');
+          if (data.output) {
+            // Mostrar salida línea por línea
+            data.output.split('\n').forEach(line => {
+              appendLine(line || ' ');
+            });
+          } else {
+            appendLine('(sin salida en System.out)', 'out-info');
+          }
+          if (data.error) {
+            appendLine('');
+            appendLine(data.error, 'out-warn');
+          }
+          appendLine('');
+          appendLine(`✓ Ejecución terminada (${data.run_time}s)`, 'out-success');
+          timingEl.textContent = `Comp: ${data.compile_time}s | Run: ${data.run_time}s`;
+        } else {
+          appendLine('✗ Error', 'out-error');
+          appendLine('');
+          (data.error || 'Error desconocido').split('\n').forEach(line => {
+            appendLine(line, 'out-error');
+          });
+          if (data.output) {
+            appendLine('');
+            appendLine('Salida parcial:', 'out-info');
+            data.output.split('\n').forEach(line => appendLine(line));
+          }
+          timingEl.textContent = data.compile_time ? `Comp: ${data.compile_time}s` : '';
+        }
+      } catch (err) {
+        clearOutput();
+        appendLine('✗ No se pudo conectar con el servidor.', 'out-error');
+        appendLine('Asegúrate de ejecutar: python3 server.py', 'out-warn');
+        appendLine('Luego abre http://localhost:8080', 'out-info');
+        statusEl.classList.add('offline');
+        statusEl.textContent = 'Desconectado';
+      } finally {
+        isRunning = false;
+        btnRun.disabled = false;
+        btnRun.innerHTML = '▶ Ejecutar';
+      }
+    }
+
+    // ========== SAVE / DOWNLOAD ==========
+    function openSaveModal() {
+      // Extraer nombre de clase
+      const match = editor.value.match(/public\s+class\s+(\w+)/);
+      const suggested = match ? match[1] : 'Main';
+      saveNameInput.value = suggested;
+      saveModal.classList.add('show');
+      saveNameInput.focus();
+    }
+
+    function closeSaveModal() {
+      saveModal.classList.remove('show');
+    }
+
+    async function confirmSave() {
+      let name = saveNameInput.value.trim() || 'Main';
+      if (!name.endsWith('.java')) name += '.java';
+      currentFileName = name;
+      fileNameEl.textContent = name;
+      localStorage.setItem('eclipse-java-code', editor.value);
+      localStorage.setItem('eclipse-java-filename', name);
+
+      // También intentar guardar en el servidor
+      try {
+        await fetch('/api/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, code: editor.value })
+        });
+        appendLine(`✓ Proyecto guardado: ${name}`, 'out-success');
+      } catch (e) {
+        appendLine(`✓ Guardado localmente en el navegador como ${name}`, 'out-info');
+      }
+      closeSaveModal();
+    }
+
+    function downloadJava() {
+      let name = currentFileName || 'Main.java';
+      if (!name.endsWith('.java')) name += '.java';
+      const blob = new Blob([editor.value], { type: 'text/x-java-source' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+      appendLine(`✓ Archivo descargado: ${name}`, 'out-success');
+    }
+
+    // ========== EVENTS ==========
+    btnRun.addEventListener('click', runCode);
+    btnClear.addEventListener('click', () => {
+      clearOutput();
+      appendLine('Consola limpiada.', 'out-info');
+    });
+    btnSave.addEventListener('click', openSaveModal);
+    btnDownload.addEventListener('click', downloadJava);
+    btnConfirmSave.addEventListener('click', confirmSave);
+    btnCancelSave.addEventListener('click', closeSaveModal);
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        runCode();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        openSaveModal();
+      }
+    });
+
+    // Cerrar modal con Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSaveModal();
+    });
+
+    // ========== START ==========
+    init();
+  </script>
+</body>
+</html>
